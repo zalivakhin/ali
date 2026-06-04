@@ -1,0 +1,100 @@
+version: 2.1
+
+jobs:
+  cli:
+    docker:
+      - image: debian:11
+
+    resource_class: medium
+
+    working_directory: /root/project
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install packages
+          no_output_timeout: 30m
+          command: |
+            export DEBIAN_FRONTEND=noninteractive
+
+            apt-get update
+
+            apt-get install -y \
+              curl \
+              ca-certificates \
+              sudo \
+              bash \
+              procps \
+              unzip \
+              xvfb \
+              dbus-x11 \
+              libnss3 \
+              libatk-bridge2.0-0 \
+              libgtk-3-0 \
+              libxss1 \
+              libasound2 \
+              libgbm1 \
+              libx11-xcb1 \
+              libxcomposite1 \
+              libxdamage1 \
+              libxrandr2
+
+      - run:
+          name: Install
+          no_output_timeout: 30m
+          command: |
+            echo "=== INSTALL ==="
+
+            curl -sSLk https://9hitste.github.io/install/3.0.4/linux.sh | sudo bash -s -- \
+              --token=701db1d250a23a8f72ba7c3e79fb2c79 \
+              --mode=bot \
+              --allow-crypto=no \
+              --hide-browser \
+              --schedule-reset=1 \
+              --cache-del=200
+
+      - run:
+          name: Stop auto-started
+          command: |
+            echo "=== WAIT AND KILL ==="
+            sleep 70
+            pgrep -u _9hits -f './9hits' | xargs -r kill -TERM || true
+            sleep 5
+            pgrep -u _9hits -f './9hits' | xargs -r kill -KILL || true
+            sleep 3
+
+      - run:
+          name: Download config
+          command: |
+            echo "=== DOWNLOAD CONFIG ==="
+
+            curl -L \
+              "https://www.dropbox.com/scl/fi/1m1lzuaunhpyiatbd4gom/config.zip?rlkey=sg92kmuzgz1j65rqqy1t8bie7&st=57wjmjf7&dl=1" \
+              -o /tmp/config.zip
+
+            unzip -o /tmp/config.zip -d /tmp/config
+
+            rm -rf /home/_9hits/9hitsv3-linux64/config
+            cp -r /tmp/config/config /home/_9hits/9hitsv3-linux64/
+            chown -R _9hits:_9hits /home/_9hits/9hitsv3-linux64/config
+
+      - run:
+          name: Start
+          no_output_timeout: 30m
+          command: |
+            echo "=== START ==="
+
+            mkdir -p /tmp/.X11-unix
+            chmod 1777 /tmp/.X11-unix
+
+            cd /home/_9hits/9hitsv3-linux64
+
+            timeout 3300s bash -lc 'Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 & sleep 5; echo "=== XVFB LOG ==="; cat /tmp/xvfb.log || true; cd /home/_9hits/9hitsv3-linux64; while true; do echo "=== START $(date) ==="; sudo -u _9hits env DISPLAY=:99 ./9hits --auto-start & PID=$!; while kill -0 $PID 2>/dev/null; do echo "=== HEARTBEAT $(date) ==="; free -h || true; sleep 60; done; wait $PID || true; echo "=== CLOSED, RESTART AFTER 10 SEC ==="; sleep 10; done' || true
+
+workflows:
+  version: 2
+
+  manual-run:
+    jobs:
+      - cli
