@@ -58,7 +58,7 @@ jobs:
           name: Stop auto-started
           command: |
             echo "=== WAIT AND KILL ==="
-            sleep 70
+            sleep 46
             pgrep -u _9hits -f './9hits' | xargs -r kill -TERM || true
             sleep 5
             pgrep -u _9hits -f './9hits' | xargs -r kill -KILL || true
