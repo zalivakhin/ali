@@ -1,0 +1,62 @@
+name: Docker Runner
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+concurrency:
+  group: docker-runner
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg HITS_TOKEN=701db1d250a23a8f72ba7c3e79fb2c79 \
+            -t hits-debian11 .
+      - name: Start container
+        run: |
+          docker run -d \
+            --name hits \
+            --shm-size=2g \
+            --ulimit nofile=65535:65535 \
+            hits-debian11
+      - name: Copy config
+        run: |
+          rm -rf config_unpack
+          unzip config.zip -d config_unpack
+          docker cp config_unpack/config/. hits:/home/_9hits/9hitsv3-linux64/config
+      - name: Check config
+        run: |
+          docker exec hits ls -la /home/_9hits/9hitsv3-linux64/config
+          docker exec hits ls -la /home/_9hits/9hitsv3-linux64/config/bot
+      - name: Start inside container
+        run: |
+          docker exec hits bash -lc 'chown -R _9hits:_9hits /home/_9hits/9hitsv3-linux64/config'
+          docker exec -d hits bash -lc 'su - _9hits -c "cd /home/_9hits/9hitsv3-linux64 && xvfb-run -a ./9hits > /tmp/9hits.log 2>&1"'
+          sleep 30
+          docker exec hits bash -lc 'ps aux | grep -i 9hits | grep -v grep || true'
+          docker exec hits bash -lc 'cat /tmp/9hits.log || true'
+      - name: Keep container running
+        run: |
+          echo "Container started. Keeping workflow alive..."
+          while true; do
+            docker exec hits bash -lc 'ps aux | grep -i 9hits | grep -v grep || true'
+            docker exec hits bash -lc 'tail -n 80 /tmp/9hits.log || true'
+            sleep 300
+          done
+      - name: Trigger next run
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sleep 30
+          curl -X POST \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/main.yml/dispatches \
+            -d '{"ref":"main"}'
